@@ -35,7 +35,10 @@ def get_s3_metadata(config_item):
     return metadata_list
 
 def get_ec2_metadata(config_item):
-    name = config_item['tags']['Name']
+    try:
+        name = config_item['tags']['Name'] 
+    except:
+        name = config_item['resourceId']
     configuration = json.loads(config_item['configuration'])
 
     security_group_check = False
@@ -91,6 +94,21 @@ def get_ecr_metadata(config_item):
         metadata_list.append(metadata)
     return metadata_list
 
+def get_eks_metadata(config_item):
+    name = config_item['resourceName']
+    info = eks.describe_cluster(name=name)['cluster']
+    logging = info['logging']['clusterLogging'][0]['enabled']
+    metadata = {
+        'AccountId': config_item['accountId'],
+        'Region': config_item['awsRegion'],
+        'EKSName': name,
+        'CreationTime': str(info['createdAt']),
+        'Status': info['status'],
+        'Logging': logging
+    }
+    metadata_list.append(metadata)
+    return metadata_list
+
 
 try:
     service = sys.argv[1]
@@ -131,7 +149,8 @@ for page in paginator.paginate(resourceType=rtype):
                 ecr = boto3.client('ecr')
                 metadata_list = get_ecr_metadata(config_item)
             case 'EKS':
-                print("not ready")
+                eks = boto3.client('eks')
+                metadata_list = get_eks_metadata(config_item)
                 
         for metadata in metadata_list:
             print("====================")
