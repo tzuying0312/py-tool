@@ -4,7 +4,6 @@ import json
 import sys
 
 def get_s3_metadata(config_item):
-    metadata_list = []
     name = config_item['resourceName']
     configuration = config_item['supplementaryConfiguration']
     encryption =  json.loads((configuration['ServerSideEncryptionConfiguration']))['rules'][0]['applyServerSideEncryptionByDefault']['sseAlgorithm']
@@ -36,7 +35,6 @@ def get_s3_metadata(config_item):
     return metadata_list
 
 def get_ec2_metadata(config_item):
-    metadata_list = []
     name = config_item['tags']['Name']
     configuration = json.loads(config_item['configuration'])
 
@@ -68,7 +66,6 @@ def get_ec2_metadata(config_item):
 
 
 def get_ecr_metadata(config_item):
-    metadata_list = []
     name = config_item['resourceName']
     configuration = json.loads(config_item['configuration'])
     encryption_type = configuration['EncryptionConfiguration']['EncryptionType']
@@ -94,13 +91,6 @@ def get_ecr_metadata(config_item):
         metadata_list.append(metadata)
     return metadata_list
 
-service_types = {
-    'S3': 'AWS::S3::Bucket',
-    'EC2': 'AWS::EC2::Instance',
-    'ECR': 'AWS::ECR::Repository',
-    'EKS': 'AWS::EKS::Cluster'
-}
-
 
 try:
     service = sys.argv[1]
@@ -110,6 +100,13 @@ except:
 print("==========")
 print("Now getting the metadata of :", service)
 print("==========\n")
+
+service_types = {
+    'S3': 'AWS::S3::Bucket',
+    'EC2': 'AWS::EC2::Instance',
+    'ECR': 'AWS::ECR::Repository',
+    'EKS': 'AWS::EKS::Cluster'
+}
 
 rtype = service_types[service]
 config = boto3.client('config')
@@ -123,6 +120,7 @@ for page in paginator.paginate(resourceType=rtype):
             limit=1
         )['configurationItems'][0]
 
+        metadata_list = []
         match service:
             case "S3":
                 s3 = boto3.client('s3')
@@ -134,12 +132,10 @@ for page in paginator.paginate(resourceType=rtype):
                 metadata_list = get_ecr_metadata(config_item)
             case 'EKS':
                 print("not ready")
-            case _:
-                print("not ready")
-                metadata_list = []
-        
+                
         for metadata in metadata_list:
             print("====================")
             print(metadata)
             print("====================")
             print("\n")
+            
