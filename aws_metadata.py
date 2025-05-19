@@ -21,18 +21,12 @@ def get_s3_metadata(config_item):
         lifecycle = False
 
     metadata = {
-        'AccountId': config_item['accountId'],
-        'Region': config_item['awsRegion'],
-        'BucketName': name,
-        'CreationTime': str(config_item['resourceCreationTime']),
-        'Encryption':encryption,
-        'Logging': logging,
-        'IsPublic': public,
-        'StorageClass': config_item.get('StorageClass', 'Standard'),
-        'Lifecycle': lifecycle
+        'accountId': config_item['accountId'],
+        'region': config_item['awsRegion'],
+        'bucketName': name,
+        'creationTime': str(config_item['resourceCreationTime'])
     }
-    metadata_list.append(metadata)
-    return metadata_list
+    return metadata
 
 def get_ec2_metadata(config_item):
     try:
@@ -48,10 +42,10 @@ def get_ec2_metadata(config_item):
             break
 
     metadata = {
-        'AccountId': config_item['accountId'],
-        'Region': config_item['awsRegion'],
+        'accountId': config_item['accountId'],
+        'region': config_item['awsRegion'],
         'InstanceName': name,
-        'CreationTime': str(config_item['resourceCreationTime']),
+        'creationTime': str(config_item['resourceCreationTime']),
         'LaunchTime': configuration['launchTime'],
         'State': configuration['state']['name'],
         'OS': configuration['platformDetails'],
@@ -63,9 +57,7 @@ def get_ec2_metadata(config_item):
         'SecurityGroupCheck': security_group_check
 
     }
-
-    metadata_list.append(metadata)
-    return metadata_list
+    return metadata
 
 
 def get_ecr_metadata(config_item):
@@ -81,33 +73,50 @@ def get_ecr_metadata(config_item):
         image_size = image_info.get('imageSizeInBytes', 0) / (1024 * 1024)
 
         metadata = {
-            'AccountId': config_item['accountId'],
-            'Region': config_item['awsRegion'],
+            'accountId': config_item['accountId'],
+            'region': config_item['awsRegion'],
             'ImageName': name,
-            'CreationTime': str(config_item['resourceCreationTime']),
+            'creationTime': str(config_item['resourceCreationTime']),
             'ImageTag': image_tag,
             'ImageSize':image_size,
             'EncryptionType':encryption_type,
             'ScanOnPush': scan_on_push,
             'Lifecycle': lifecycle
         }
-        metadata_list.append(metadata)
-    return metadata_list
+    return metadata
 
 def get_eks_metadata(config_item):
     name = config_item['resourceName']
     info = eks.describe_cluster(name=name)['cluster']
     logging = info['logging']['clusterLogging'][0]['enabled']
     metadata = {
-        'AccountId': config_item['accountId'],
-        'Region': config_item['awsRegion'],
+        'accountId': config_item['accountId'],
+        'region': config_item['awsRegion'],
         'EKSName': name,
-        'CreationTime': str(info['createdAt']),
+        'creationTime': str(info['createdAt']),
         'Status': info['status'],
         'Logging': logging
     }
     metadata_list.append(metadata)
     return metadata_list
+
+def get_codepipeline_metadata(config_item):
+    metadata = {
+        'accountId': config_item['accountId'],
+        'region': config_item['awsRegion'],
+        'bucketName': config_item['resourceName'],
+        'creationTime': str(config_item['resourceCreationTime']),
+    }
+    return metadata
+
+def get_lambda_metadata(config_item):
+    metadata = {
+        'accountId': config_item['accountId'],
+        'region': config_item['awsRegion'],
+        'lambdaName': config_item['resourceName'],
+        # 'creationTime': str(config_item['resourceCreationTime']),
+    }
+    return metadata
 
 
 try:
@@ -123,14 +132,17 @@ service_types = {
     'S3': 'AWS::S3::Bucket',
     'EC2': 'AWS::EC2::Instance',
     'ECR': 'AWS::ECR::Repository',
-    'EKS': 'AWS::EKS::Cluster'
+    'EKS': 'AWS::EKS::Cluster',
+    'Lambda': 'AWS::Lambda::Function',
+    'CodePipeline': 'AWS::CodePipeline::Pipeline'
 }
 
 rtype = service_types[service]
 config = boto3.client('config')
-
+metadata_list = []
 paginator = config.get_paginator('list_discovered_resources')
 for page in paginator.paginate(resourceType=rtype):
+    next_token = page.get('nextToken')
     for resource in page['resourceIdentifiers']:
         config_item = config.get_resource_config_history(
             resourceType=rtype,
@@ -138,23 +150,24 @@ for page in paginator.paginate(resourceType=rtype):
             limit=1
         )['configurationItems'][0]
 
-        metadata_list = []
         match service:
             case "S3":
                 s3 = boto3.client('s3')
-                metadata_list = get_s3_metadata(config_item)
+                metadata = get_s3_metadata(config_item)
             case 'EC2':
-                metadata_list = get_ec2_metadata(config_item)
+                metadata = get_ec2_metadata(config_item)
             case 'ECR':
                 ecr = boto3.client('ecr')
-                metadata_list = get_ecr_metadata(config_item)
+                metadata = get_ecr_metadata(config_item)
             case 'EKS':
                 eks = boto3.client('eks')
-                metadata_list = get_eks_metadata(config_item)
-                
-        for metadata in metadata_list:
-            print("====================")
-            print(metadata)
-            print("====================")
-            print("\n")
-            
+                metadata = get_eks_metadata(config_item)
+            case 'Lambda':
+                metadata = get_lambda_metadata(config_item)
+            case 'CodePipeline':
+                metadata = get_codepipeline_metadata(config_item)
+        metadata_list.append(metadata)
+
+response = {"data": metadata_list, "pagination": {"nextToken": next_token}}                
+print(json.dumps(response, indent=4))
+    
